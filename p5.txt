@@ -1,0 +1,88 @@
+!pip install pandas numpy scikit-learn prometheus_client
+import logging
+import time
+import pandas as pd
+import numpy as np
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.datasets import load_diabetes
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('mlops_monitoring.log')
+    ]
+)
+
+
+data = load_diabetes()
+
+X = pd.DataFrame(data.data, columns=data.feature_names)
+y = pd.Series(data.target)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+
+model = LinearRegression()
+
+logging.info("Starting model training...")
+model.fit(X_train, y_train)
+logging.info("Model training completed.")
+
+
+y_pred = model.predict(X_test)
+
+mse = mean_squared_error(y_test, y_pred)
+
+logging.info(f"Mean Squared Error: {mse}")
+
+start_time = time.time()
+prediction = model.predict(X_test)
+end_time = time.time()
+
+latency = end_time - start_time
+logging.info(f"Prediction latency: {latency:.6f} seconds")
+MSE_THRESHOLD = 3500.0
+
+if mse > MSE_THRESHOLD:
+    logging.warning(
+        f"ALERT: Model MSE {mse:.2f} exceeded threshold {MSE_THRESHOLD}"
+    )
+else:
+    logging.info(
+        f"MSE within acceptable range (threshold={MSE_THRESHOLD})."
+    )
+
+
+# --- Expose metrics for Prometheus ---
+# Install using: pip install prometheus_client
+
+from prometheus_client import start_http_server, Gauge
+
+MSE_GAUGE = Gauge(
+    'model_mse',
+    'Mean Squared Error of the deployed model'
+)
+
+LATENCY_GAUGE = Gauge(
+    'model_prediction_latency_seconds',
+    'Prediction latency in seconds'
+)
+
+start_http_server(8000)
+
+MSE_GAUGE.set(mse)
+LATENCY_GAUGE.set(latency)
+
+print("Metrics exposed at http://127.0.0.1:8000/metrics")
+
+
+# In production: Prometheus scrapes this endpoint, and a Grafana
+# alert rule (e.g. model_mse > 3500) triggers a notification.

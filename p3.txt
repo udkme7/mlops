@@ -1,0 +1,73 @@
+import joblib
+import numpy as np
+def test_model_prediction():
+    model = joblib.load('diabetes_model.joblib')
+    input_data = np.array(
+        [0.02, 0.07, 0.03, 0.02, 0.01,
+         0.03, 0.01, 0.04, 0.03, 0.01]
+    ).reshape(1, -1)
+    prediction = model.predict(input_data)
+    assert isinstance(prediction[0], (float, np.floating)), \
+        f"Expected float but got {type(prediction[0])}"
+
+
+def test_model_output_shape():
+    model = joblib.load('diabetes_model.joblib')
+    input_data = np.zeros((5, 10))
+    predictions = model.predict(input_data)
+    assert predictions.shape == (5,), \
+        f"Expected shape (5,) but got {predictions.shape}"
+
+
+# Run the tests
+# !pytest test_model.py -v
+
+# .github/workflows/ci.yml
+
+name: MLOps CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pandas scikit-learn joblib pytest flask
+
+      - name: Train model
+        run: python train.py
+
+      - name: Run unit tests
+        run: pytest test_model.py -v
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to cloud platform
+        run: |
+          echo "Deploying trained model and Flask API..."
+          # gcloud run deploy mlops-api --source . --region us-central1
