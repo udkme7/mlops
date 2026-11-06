@@ -1,7 +1,14 @@
-!pip install mlflow pandas scikit-learn pyngrok
+
+!pip install -U mlflow pandas scikit-learn pyngrok --break-system-packages
+
 import mlflow
 import mlflow.sklearn
 import pandas as pd
+import subprocess
+import time
+
+from pyngrok import ngrok
+from mlflow.models import infer_signature
 
 from sklearn.datasets import load_diabetes
 from sklearn.model_selection import train_test_split
@@ -19,41 +26,79 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
+# Set experiment
 mlflow.set_experiment("diabetes-regression")
 
-# Train and log multiple models for comparison
+# Models
 models_to_try = {
     "LinearRegression": LinearRegression(),
     "Ridge(alpha=1.0)": Ridge(alpha=1.0),
     "RandomForest(n_estimators=100)": RandomForestRegressor(
-        n_estimators=100, random_state=42
+        n_estimators=100,
+        random_state=42
     ),
 }
 
+# Train and log models
 for name, mdl in models_to_try.items():
+
     with mlflow.start_run(run_name=name):
+
         mdl.fit(X_train, y_train)
 
         y_pred = mdl.predict(X_test)
+
         mse = mean_squared_error(y_test, y_pred)
+
+        # Infer model signature
+        signature = infer_signature(X_train, mdl.predict(X_train))
 
         mlflow.log_param("model_type", name)
         mlflow.log_metric("mse", mse)
-        mlflow.sklearn.log_model(mdl, "model")
+
+        # Log model using cloudpickle
+        mlflow.sklearn.log_model(
+            sk_model=mdl,
+            name="model",
+            signature=signature,
+            input_example=X_train.head(5),
+            serialization_format="cloudpickle"
+        )
 
         print(f"{name}: MSE = {mse:.2f}")
 
-# Launch the MLflow UI and tunnel it with ngrok
+# Launch MLflow UI
+
+
+import sys
 import subprocess
 import time
-from pyngrok import ngrok
 
 mlflow_process = subprocess.Popen(
-    ["mlflow", "ui", "--port", "5001"]
+    [
+        sys.executable,
+        "-m",
+        "mlflow",
+        "ui",
+        "--host", "0.0.0.0",
+        "--port", "5001"
+    ]
 )
 
-time.sleep(3)
+# Wait for MLflow UI to start
+time.sleep(10)
+
+# Check whether MLflow started successfully
+if mlflow_process.poll() is not None:
+    raise RuntimeError("MLflow UI failed to start. Check installation.")
+
+
+
+from pyngrok import ngrok
+
+ngrok.set_auth_token("YOUR_NGROK_AUTH_TOKEN")
 
 public_url = ngrok.connect(5001)
 
-print("MLflow UI available at:", public_url)
+print("MLflow UI is running!")
+print("Public URL:", public_url)
